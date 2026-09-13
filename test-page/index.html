@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SecureBank — Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f0f4f8; color: #1a202c; }
+    header { background: #1a365d; color: #fff; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+    header h1 { font-size: 1.25rem; }
+    nav { display: flex; gap: 8px; }
+    nav a { color: #bee3f8; text-decoration: none; padding: 6px 12px; border-radius: 4px; font-size: 0.9rem; }
+    nav a:hover { background: #2c5282; }
+    main { max-width: 900px; margin: 32px auto; padding: 0 16px; }
+    .card { background: #fff; border-radius: 8px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+    .balance { font-size: 2rem; font-weight: 700; color: #276749; }
+    .account-meta { color: #718096; font-size: 0.85rem; margin-top: 4px; }
+    .toolbar { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 16px; }
+    .toolbar label { font-size: 0.85rem; color: #4a5568; display: flex; flex-direction: column; gap: 4px; }
+    .toolbar input, .toolbar select { padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 0.9rem; min-width: 180px; }
+    .btn { padding: 8px 18px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem; font-weight: 600; }
+    .btn-primary { background: #3182ce; color: #fff; }
+    .btn-secondary { background: #e2e8f0; color: #2d3748; }
+    .btn-danger { background: #e53e3e; color: #fff; }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th { text-align: left; padding: 10px 12px; background: #edf2f7; color: #4a5568; font-weight: 600; }
+    td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; }
+    .amount-debit { color: #c53030; }
+    .amount-credit { color: #276749; }
+    .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; }
+    .hidden-el { display: none; }
+    footer { text-align: center; padding: 24px; color: #a0aec0; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+
+<!-- ① HEADING (h1) + navigation links -->
+<header>
+  <h1>SecureBank Dashboard</h1>
+  <nav>
+    <!-- ② Link: Transactions -->
+    <a href="#transactions" id="nav-transactions">Transactions</a>
+    <!-- ③ Link: Profile -->
+    <a href="#profile" id="nav-profile">Profile</a>
+    <!-- ④ Link: Support -->
+    <a href="#support" id="nav-support">Support</a>
+  </nav>
+</header>
+
+<main>
+
+  <!-- Account summary card -->
+  <div class="card" id="account-card">
+    <!-- ⑤ HEADING h2 -->
+    <h2>Account Summary</h2>
+    <p class="balance" id="balance-display">₹ 1,24,580.00</p>
+    <p class="account-meta">Account: XXXX-XXXX-4821 &nbsp;|&nbsp; IFSC: SBIN0001234 &nbsp;|&nbsp; Holder: Arjun Sharma</p>
+  </div>
+
+  <!-- Transactions card -->
+  <div class="card" id="transactions">
+    <!-- ⑥ HEADING h2 -->
+    <h2>Recent Transactions</h2>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <!-- ⑦ Labeled text input: Search -->
+      <label for="search-input">Search Transactions
+        <input type="text" id="search-input" placeholder="Merchant, amount…" value="" />
+      </label>
+
+      <!-- ⑧ Select: Category filter -->
+      <label for="category-select">Category
+        <select id="category-select">
+          <option value="">All</option>
+          <option value="food">Food &amp; Dining</option>
+          <option value="travel">Travel</option>
+          <option value="utilities">Utilities</option>
+          <option value="shopping">Shopping</option>
+        </select>
+      </label>
+
+      <!-- ⑨ Button: Apply Filter -->
+      <button class="btn btn-primary" id="btn-filter">Apply Filter</button>
+
+      <!-- ⑩ Button: Export (disabled) -->
+      <button class="btn btn-secondary" id="btn-export" disabled>Export CSV</button>
+    </div>
+
+    <!-- ⑪ Checkbox: Show only debits -->
+    <div class="checkbox-row" style="margin-bottom:16px;">
+      <input type="checkbox" id="chk-debits-only" />
+      <label for="chk-debits-only">Show debits only</label>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th><th>Merchant</th><th>Category</th><th>Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>2026-09-12</td><td>Swiggy</td><td>Food</td><td class="amount-debit">−₹ 340.00</td></tr>
+        <tr><td>2026-09-11</td><td>IRCTC</td><td>Travel</td><td class="amount-debit">−₹ 1,250.00</td></tr>
+        <tr><td>2026-09-10</td><td>Salary Credit</td><td>Income</td><td class="amount-credit">+₹ 85,000.00</td></tr>
+        <tr><td>2026-09-09</td><td>Amazon</td><td>Shopping</td><td class="amount-debit">−₹ 2,499.00</td></tr>
+        <tr><td>2026-09-08</td><td>BESCOM</td><td>Utilities</td><td class="amount-debit">−₹ 1,120.00</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Login card (for password-protection test) -->
+  <div class="card" id="profile">
+    <!-- ⑫ HEADING h2 -->
+    <h2>Security Settings</h2>
+
+    <!-- ⑬ Labeled password input — value must NEVER be captured -->
+    <div style="margin: 16px 0; display:flex; flex-direction:column; gap:8px; max-width:320px;">
+      <label for="current-password">Current Password</label>
+      <input type="password" id="current-password" value="SuperSecret123!" autocomplete="current-password" />
+
+      <!-- ⑭ Unlabeled input (no <label>, no aria-label) -->
+      <input type="text" id="unlabeled-input" placeholder="" value="test-value-unlabeled" />
+
+      <!-- ⑮ Button: Change Password -->
+      <button class="btn btn-danger" id="btn-change-pwd">Change Password</button>
+    </div>
+  </div>
+
+  <!-- Hidden element — must be detected as not visible -->
+  <div class="hidden-el" id="hidden-section">
+    <button id="btn-hidden">Hidden Action</button>
+  </div>
+
+</main>
+
+<footer>
+  <p>SecureBank © 2026 — Test Page for Privacy-Preserving Browser Agent (SIH 2026)</p>
+  <p style="color:#e53e3e; font-size:0.75rem;">⚠ FAKE DATA — For prototype testing only. Not a real bank.</p>
+</footer>
+
+</body>
+</html>
