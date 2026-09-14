@@ -1,32 +1,34 @@
-# Privacy-Preserving Browser Agent — Day 1
+# Privacy-Preserving Browser Agent — Extension
 
 **Member 1 | Browser Perception Layer**
 Smart India Hackathon 2026
 
 ---
 
-## What This Is
+## What this is
 
-A Chrome Manifest V3 extension that observes a webpage and produces a
-**PageState** object conforming exactly to `page-state.schema.json` (schema
-version `1.0`).
+A Chrome Manifest V3 content-script extension that observes a webpage and produces a **PageState** object conforming exactly to `page-state.schema.json` (schema version `1.0`).
 
-This is Day 1 only. No PII sanitization, no LLM, no action execution.
+No PII sanitization, no LLM, no action execution — this is the browser perception layer only. The `PageState` it produces is the input contract for the downstream privacy engine.
 
 ---
 
-## Project Structure
+## Project structure
 
 ```
 privacy-browser-agent/
 ├── extension/
-│   ├── manifest.json      Chrome MV3 manifest
-│   ├── page-state.js      Extraction engine + inline schema validator
-│   ├── content.js         Orchestrator + debug output
-│   └── README.md          This file
+│   ├── manifest.json       Chrome MV3 manifest
+│   ├── page-state.js       Extraction engine + inline schema validator
+│   ├── content.js          Orchestrator — runs capture, logs output, runs benchmark
+│   ├── ground-truth.js     39 manually authored GT entries (GT-01–GT-39)
+│   ├── benchmark.js        Automated benchmark runner
+│   ├── diff-test.js        Diff engine verification script (not in manifest by default)
+│   └── README.md           This file
 ├── test-page/
-│   └── index.html         Controlled banking-style test page (15+ elements)
-└── schemas/               Frozen cross-team contracts (DO NOT MODIFY)
+│   ├── index.html          Controlled banking-style test page (39 GT elements)
+│   └── ground-truth.js     Mirror of extension/ground-truth.js
+└── schemas/                Frozen cross-team contracts — DO NOT MODIFY
     ├── shared.schema.json
     ├── page-state.schema.json
     ├── sanitized-page-state.schema.json
@@ -36,9 +38,9 @@ privacy-browser-agent/
 
 ---
 
-## Setup (Chrome / Chromium)
+## Setup
 
-1. Open Chrome and navigate to `chrome://extensions/`
+1. Open Chrome → `chrome://extensions/`
 2. Enable **Developer mode** (top-right toggle)
 3. Click **Load unpacked**
 4. Select the `extension/` folder
@@ -46,49 +48,52 @@ privacy-browser-agent/
 
 ---
 
-## Running the Test Page
+## Running the test page
 
 **Option A — file:// (simplest)**
-
-Open `test-page/index.html` directly in Chrome:
 
 ```
 File → Open File → test-page/index.html
 ```
 
-**Option B — local HTTP server (recommended, avoids some file:// quirks)**
+**Option B — local HTTP server (recommended)**
 
 ```bash
-# Python 3
 cd privacy-browser-agent
 python -m http.server 8080
-# then open: http://localhost:8080/test-page/index.html
+# open: http://localhost:8080/test-page/index.html
 ```
 
 ---
 
-## Inspecting the PageState
+## Console output
 
-1. Open the test page in Chrome with the extension loaded
-2. Open DevTools → **Console** tab
-3. Look for:
+Open DevTools → **Console** after loading the test page:
 
 ```
 === PRIVACY-PRESERVING BROWSER AGENT ===
 PAGE STATE
-{ ... }                          ← full PageState JSON
+{ "schema_version": "1.0", "page_state_id": "PS_…", … }
+
 [PageState] ✅ Schema validation PASSED
+[PageState] diff — existing:0 added:N changed:0 removed:0
+[PageState] captured N elements in X.Xms
+
 [PageState] Element Registry
   EL_001 → A "Transactions"
   EL_002 → A "Profile"
-  ...
-```
+  …
 
-The PageState JSON is the raw output that will be passed to Member 2.
+=== BENCHMARK ===
+GT-01 … ✅
+…
+GT-39 … ✅
+BENCHMARK RESULT: 39/39 passed
+```
 
 ---
 
-## PageState Structure
+## PageState structure
 
 ```json
 {
@@ -96,7 +101,7 @@ The PageState JSON is the raw output that will be passed to Member 2.
   "page_state_id": "PS_Xk9mLpQr2w",
   "captured_at": "2026-09-14T10:30:00.000Z",
   "url": "http://localhost:8080/test-page/index.html",
-  "title": "SecureBank — Dashboard",
+  "title": "SecureBank — Benchmark Page",
   "visible_text": "SecureBank Dashboard Transactions Profile ...",
   "elements": [
     {
@@ -108,8 +113,7 @@ The PageState JSON is the raw output that will be passed to Member 2.
       "visible": true,
       "enabled": true,
       "bounds": { "x": 100, "y": 16, "width": 100, "height": 32 }
-    },
-    ...
+    }
   ]
 }
 ```
@@ -118,28 +122,84 @@ All fields conform to `page-state.schema.json`. No extra fields are added.
 
 ---
 
-## Element Registry
+## Element registry
 
-`page-state.js` maintains an in-memory `Map<string, Element>`:
-
-```
-EL_001 → <a#nav-transactions>
-EL_002 → <a#nav-profile>
-EL_003 → <a#nav-support>
-EL_004 → <h1>
-...
-```
+`page-state.js` maintains an in-memory `Map<string, WeakRef<Element>>`:
 
 - IDs are opaque (`EL_NNN`) — they encode no semantic meaning
-- IDs are temporary — they reset on each capture
+- IDs reset on each capture
+- `WeakRef` wrapping allows stale/detached nodes to be detected without memory leaks
 - The registry is browser-local — never serialised or sent anywhere
 - Pattern enforced: `^EL_[0-9]{3,6}$`
 
+```js
+// Resolve a live element by ID (returns null if detached/GC'd)
+window.__resolveRegistryEntry("EL_001")
+
+// Inspect the full registry
+window.__elementRegistry.forEach((ref, id) => {
+  const el = ref.deref();
+  if (el) console.log(id, el.tagName, el.id);
+});
+```
+
 ---
 
-## Visibility Detection
+## Accessible-name resolution (8-step priority chain)
 
-An element is considered **visible** when ALL of the following hold:
+| Priority | Source |
+|---|---|
+| 1 | `aria-label` |
+| 2 | `aria-labelledby` (multiple IDs joined; broken refs silently skipped) |
+| 3 | `<label for="id">` |
+| 4 | Wrapping `<label>` (nested form controls stripped before reading text) |
+| 5 | `placeholder` |
+| 6 | `title` |
+| 7 | `alt` (images, `input[type=image]`) |
+| 8 | `aria-describedby` (last-resort fallback) |
+
+All resolved strings are whitespace-normalised and capped at 500 characters.
+
+---
+
+## Role resolution (ARIA 1.2)
+
+Priority: explicit `role` attribute → native HTML semantic → safe generic fallback.
+
+Key rules:
+
+- `<section>` with an accessible name (`aria-label` / `aria-labelledby` / `title`) → `"region"`
+- `<section>` with no accessible name → `"generic"`
+- `<a href>` → `"link"` ; `<a>` without `href` → `"generic"`
+- `input[type=search]` → `"searchbox"`
+- `<ul>` / `<ol>` → `"list"` ; `<li>` → `"listitem"`
+- `<article>` → `"article"` ; `<aside>` → `"complementary"`
+- `<dialog>` → `"dialog"` ; `<details>` → `"group"` ; `<summary>` → `"button"`
+- `<table>` → `"table"` ; `<th>` → `"columnheader"` ; `<td>` → `"cell"`
+- `<fieldset>` → `"group"` ; `<legend>` → `"legend"`
+
+---
+
+## Shadow DOM traversal
+
+`_collectElements(root, results)` runs `querySelectorAll(SELECTOR)` on the given root, then recurses into open shadow roots of all descendants. Closed shadow roots (`shadowRoot === null`) are intentionally skipped. Elements are deduplicated across the full traversal.
+
+---
+
+## Internal diff engine
+
+Tracks element identity across multiple captures using a `WeakMap<DOMElement, fingerprint>` that is **never reset** between captures.
+
+- Fingerprint: `role|label|type|quantisedBounds` (bounds quantised to 8 px grid)
+- Elements are classified as `existing`, `added`, `changed`, or `removed`
+- `changed` increments when the same DOM node has a different fingerprint vs. the previous capture
+- Result is logged to the console only — never added to `PageState`
+
+---
+
+## Visibility detection
+
+An element is **visible** when ALL of the following hold:
 
 - `el.isConnected === true`
 - `getBoundingClientRect()` returns non-zero width AND height
@@ -147,48 +207,43 @@ An element is considered **visible** when ALL of the following hold:
 - `computedStyle.visibility !== 'hidden'`
 - `computedStyle.opacity !== '0'`
 
-The hidden button in the test page (`#btn-hidden`) will have `visible: false`.
-
 ---
 
-## Enabled State Detection
+## Enabled-state detection
 
 - Native `disabled` property (covers `<input>`, `<button>`, `<select>`, `<textarea>`)
-- `aria-disabled="true"` attribute
-- The Export CSV button (`#btn-export`) is `disabled` → `enabled: false`
+- `aria-disabled="true"` attribute on any element
 
 ---
 
-## Bounds
-
-`getBoundingClientRect()` is called for every visible element.
-Values are rounded to integers (pixels relative to viewport).
-
----
-
-## Password Protection
+## Password protection
 
 `<input type="password">` values are **never captured**:
 
 - `_text()` returns `""` for password inputs
 - `_value()` returns `undefined` for password inputs
-- The `value` field is therefore absent from the element entry
-- The test page has `#current-password` with `value="SuperSecret123!"` —
-  this value will NOT appear anywhere in the PageState
+- The `value` field is therefore absent from the element entry entirely
+- The test page has `#el-password` with `value="SuperSecret123!"` — this value will NOT appear anywhere in the PageState
+
+Verify:
+
+```js
+JSON.stringify(window.__pageStateCapture()).includes("SuperSecret123!")
+// must return: false
+```
 
 ---
 
-## Schema Validation
+## Schema validation
 
-`page-state.js` includes an inline structural validator (`validatePageState`)
-that checks every constraint from the frozen schema:
+`validatePageState()` checks every constraint from the frozen schema:
 
 - `schema_version === "1.0"`
 - `page_state_id` matches `^PS_[A-Za-z0-9_-]{6,64}$`
-- `captured_at` is a valid date-time string
+- `captured_at` is a valid ISO 8601 date-time string
 - `url` length 1–2048
 - `title` length ≤ 300
-- `visible_text` length ≤ 20000
+- `visible_text` length ≤ 20 000
 - `elements` array ≤ 500 items
 - Each element: `element_id` matches `^EL_[0-9]{3,6}$`
 - Each element: `role` string 1–80 chars
@@ -196,78 +251,115 @@ that checks every constraint from the frozen schema:
 - `bounds` fields are numbers, width/height ≥ 0
 - No `additionalProperties` on top-level or element objects
 
-Result is logged to the console as ✅ PASSED or ❌ FAILED with details.
+---
+
+## Ground-truth benchmark — 39 cases
+
+| ID | Test | Expected |
+|---|---|---|
+| GT-01 | `<h1>` implicit role | `heading` |
+| GT-02 | `<nav>` not in SELECTOR | not extracted |
+| GT-03 | `<a>` text-content label | `link`, label `""` |
+| GT-04 | `<a>` with `aria-label` | `link`, label `"Go to Profile"` |
+| GT-05 | `aria-label` | `textbox`, label `"Full Name"` |
+| GT-06 | `aria-labelledby` (two IDs) | `textbox`, label `"Account Number"` |
+| GT-07 | `<label for>` | `textbox`, label `"Email Address"` |
+| GT-08 | Wrapping `<label>` | `textbox`, label `"Date of Birth"` |
+| GT-09 | `placeholder` fallback | `textbox`, label `"Search transactions"` |
+| GT-10 | `title` fallback | `textbox`, label `"Reference Code"` |
+| GT-11 | Unlabeled input | `textbox`, label `""` |
+| GT-12 | `<button>` implicit role | `button` |
+| GT-13 | `<a href>` implicit link | `link` |
+| GT-14 | `<select>` | `combobox` |
+| GT-15 | `<textarea>` | `textbox` |
+| GT-16 | `input[type=checkbox]` | `checkbox` |
+| GT-17 | `input[type=radio]` | `radio` |
+| GT-18 | `<img>` not in SELECTOR | not extracted |
+| GT-19 | Enabled button | `enabled: true` |
+| GT-20 | `disabled` attribute | `enabled: false` |
+| GT-21 | Disabled input | `enabled: false` |
+| GT-22 | `aria-disabled="true"` | `enabled: false` |
+| GT-23 | Visible button | `visible: true`, bounds present |
+| GT-24 | `display:none` | `visible: false`, no bounds |
+| GT-25 | `visibility:hidden` | `visible: false`, no bounds |
+| GT-26 | `opacity:0` | `visible: false`, no bounds |
+| GT-27 | Zero-size element | `visible: false`, no bounds |
+| GT-28 | Password input | `role: textbox`, value absent |
+| GT-29 | Change Password button | `button`, `enabled: true` |
+| GT-30 | `aria-describedby` fallback | label `"Sort by date or amount"` |
+| GT-31 | `input[type=search]` | `searchbox` |
+| GT-32 | `<ul>` | `list` |
+| GT-33 | `<li>` | `listitem` |
+| GT-34 | `<article>` | `article` |
+| GT-35 | Named `<section>` | `region`, label `"Quick Actions"` |
+| GT-36 | Shadow DOM button | `button`, label `"Shadow Action"` |
+| GT-37 | `<a>` without `href` | not extracted |
+| GT-38 | Broken `aria-labelledby` | label `"Fallback placeholder"` |
+| GT-39 | Unnamed `<section>` | `generic`, label `""` |
+
+**Current result: 39/39 — 100%**
 
 ---
 
-## Test Cases Covered by the Test Page
+## Diff engine verification (diff-test.js)
 
-| # | Test Case | Element |
-|---|-----------|---------|
-| 1 | 10+ useful elements | All 15+ elements |
-| 2 | Button | `#btn-filter`, `#btn-change-pwd` |
-| 3 | Link | `#nav-transactions`, `#nav-profile`, `#nav-support` |
-| 4 | Text input | `#search-input` |
-| 5 | Labeled input | `#search-input` (has `<label for>`) |
-| 6 | Unlabeled input | `#unlabeled-input` (no label, no aria-label) |
-| 7 | Select | `#category-select` |
-| 8 | Checkbox | `#chk-debits-only` |
-| 9 | Heading | `<h1>`, `<h2>` × 3 |
-| 10 | Element without text | `#unlabeled-input` |
-| 11 | Element without label | `#unlabeled-input` |
-| 12 | Disabled control | `#btn-export` (`disabled` attribute) |
-| 13 | Hidden element | `#btn-hidden` (inside `display:none` div) |
-| 14 | Password input | `#current-password` — value NOT captured |
-| 15 | Bounds extraction | All visible elements have `bounds` |
-| 16 | Temporary ID format | All IDs match `^EL_[0-9]{3,6}$` |
-| 17 | Registry mapping | `__elementRegistry` Map in console |
-| 18 | PageState schema validation | Inline validator logs ✅ PASSED |
+To test cross-capture change detection:
+
+1. Add `"diff-test.js"` to the `js` array in `manifest.json` (after `"content.js"`)
+2. Reload the extension and open the test page
+3. The script runs 5 captures with mutations on `#el-aria-label`
+4. Expected output:
+
+```
+[DiffTest] C1 — existing:0   added:N   changed:0 removed:0
+[DiffTest] C2 — existing:N   added:0   changed:0 removed:0
+[DiffTest] C3 — existing:N-1 added:0   changed:1 removed:0
+[DiffTest] C4 — existing:N-1 added:0   changed:1 removed:0
+[DiffTest] C5 — existing:N   added:0   changed:0 removed:0
+```
+
+5. Remove `diff-test.js` from the manifest after testing
 
 ---
 
-## Acceptance Criteria
+## Acceptance criteria
 
 - [x] Chrome MV3 extension loads without errors
-- [x] Controlled webpage can be inspected
-- [x] PageState is generated automatically
+- [x] PageState is generated automatically at `document_idle`
 - [x] PageState conforms to `page-state.schema.json`
 - [x] `schema_version` is exactly `"1.0"`
 - [x] `page_state_id` follows `^PS_[A-Za-z0-9_-]{6,64}$`
 - [x] `captured_at` is valid ISO 8601
 - [x] `url` and `title` are captured
-- [x] `visible_text` is captured
-- [x] 10+ useful elements are represented
+- [x] `visible_text` is captured (≤ 20 000 chars)
+- [x] 39 elements extracted and benchmarked
 - [x] Every element has a valid opaque `EL_xxx` ID
-- [x] `EL_xxx` IDs map locally to actual DOM elements
-- [x] `role` is captured
-- [x] Visibility is captured
-- [x] Enabled state is captured
-- [x] Useful labels/text are captured
-- [x] Bounds are captured where applicable
+- [x] `EL_xxx` IDs map locally to live DOM elements via WeakRef registry
+- [x] Role, visibility, enabled state, label, and bounds captured correctly
 - [x] Password values are never captured
-- [x] Missing labels/text do not crash the extractor
-- [x] No external API/network request is made
+- [x] Open shadow DOM elements are extracted
+- [x] Named `<section>` → `region`; unnamed `<section>` → `generic`
+- [x] Diff engine correctly classifies existing / added / changed / removed
+- [x] No external API or network request is made
 - [x] Frozen schemas remain completely unchanged
-- [x] README explains setup and testing
+- [x] Benchmark passes 39/39
 
 ---
 
-## Limitations (Day 1)
+## Limitations
 
-- Bounds are viewport-relative (not page-absolute); this is correct for
-  visual-context use but will shift if the page is scrolled before capture.
-- Capture runs once at `document_idle`; dynamic SPA updates are not yet
-  observed (Day 2+ concern).
-- The inline validator is structural only; it does not use a full JSON Schema
-  library (no external dependencies by design).
+- Bounds are viewport-relative (not page-absolute); Y values shift if the page is scrolled before capture.
+- Capture runs once at `document_idle`; SPA navigation does not trigger a re-capture.
+- The inline validator is structural only — no full JSON Schema 2020-12 `$ref` resolution.
 - `visible_text` is truncated at 20 000 characters per the schema limit.
+- Closed shadow roots are not traversed by design.
 
 ---
 
-## Security Notes
+## Security notes
 
-- No network requests are made by the extension.
-- PageState never leaves the browser in Day 1.
+- No network requests are made.
+- `PageState` never leaves the browser.
 - Password values are hard-blocked at the extraction layer.
-- The frozen schemas are copied read-only; the originals in
-  `PROTOTYPEOFSIH/AgentArora/contracts/` are the canonical source.
+- No cookies, tokens, or credentials are captured.
+- Frozen schemas in `schemas/` are never modified.
