@@ -10,6 +10,8 @@ from src.detector import evaluate_item
 
 # Path to the JSON benchmark file
 JSON_BENCHMARK_PATH = Path(__file__).resolve().parent / "benchmark_data.json"
+with open(JSON_BENCHMARK_PATH, "r", encoding="utf-8") as _benchmark_file:
+    BENCHMARK_DATASET = json.load(_benchmark_file)
 
 
 def load_benchmark_dataset():
