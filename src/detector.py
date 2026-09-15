@@ -32,7 +32,12 @@ class PrivacyDetector:
     NEGATIVE_CONTEXTS = {
         "account": ["order id:", "product id:", "invoice no:", "pin code:", "year:", "reference:"],
         "payment": ["page", "quantity:", "distance:", "score:", "id:"],
-        "name": ["amazon india", "google chrome", "smart banking", "order summary", "privacy settings", "student portal"],
+        "name": [
+            "amazon india", "google chrome", "smart banking", "order summary", 
+            "privacy settings", "student portal", "view transactions", 
+            "sign in", "log out", "click here", "learn more", "read more",
+            "get started", "contact us", "about us"
+        ],
         "address": ["home page", "shipping address", "address settings"]
     }
 

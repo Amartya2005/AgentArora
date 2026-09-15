@@ -111,6 +111,36 @@ class PrivacyTokenizer:
         categories = [category_hint] if category_hint else list(self.CATEGORY_ORDER)
         matches: List[Tuple[int, int, str]] = []
 
+        # First, check if any already-tokenized values appear in this text
+        # This ensures consistency - if "Rahul Sharma" was already seen and tokenized,
+        # we reuse the same token when it appears again in visible_text
+        for raw_value, token in self.raw_to_token_map.items():
+            # Find all occurrences of this raw value in the text
+            start = 0
+            while True:
+                pos = text.find(raw_value, start)
+                if pos == -1:
+                    break
+                # Determine category from token prefix
+                if token.startswith("[PERSON_"):
+                    category = "name"
+                elif token.startswith("[EMAIL_"):
+                    category = "email"
+                elif token.startswith("[PHONE_"):
+                    category = "phone"
+                elif token.startswith("[ACCOUNT_"):
+                    category = "account"
+                elif token.startswith("[MONEY_"):
+                    category = "payment"
+                elif token.startswith("[PASSWORD_"):
+                    category = "password"
+                elif token.startswith("[ADDRESS_"):
+                    category = "address"
+                else:
+                    category = "name"  # default
+                matches.append((pos, pos + len(raw_value), category))
+                start = pos + 1  # Continue searching for more occurrences
+
         # Explicit field context has priority because a number can be either a
         # phone number or an account number depending on its label.
         for cat in categories:
