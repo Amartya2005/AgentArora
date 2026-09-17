@@ -20,11 +20,15 @@
 
 "use strict";
 
+(function () {
+if (window.__pageStateCapture) return;
+
 // ---------------------------------------------------------------------------
 // Element Registry  (EL_xxx → WeakRef<Element>, in-memory only)
 // Using WeakRef so stale/detached nodes can be detected without leaking memory.
 // ---------------------------------------------------------------------------
 const _registry = new Map(); // Map<string, WeakRef<Element>>
+const _identityRegistry = new Map(); // Map<string, captured target identity>
 let _counter = 0;
 
 function _nextId() {
@@ -34,15 +38,17 @@ function _nextId() {
   return "EL_" + padded;
 }
 
-function _register(el) {
+function _register(el, identity) {
   const id = _nextId();
   _registry.set(id, new WeakRef(el));
+  _identityRegistry.set(id, Object.freeze(identity));
   return id;
 }
 
 /** Reset registry between captures. */
 function _resetRegistry() {
   _registry.clear();
+  _identityRegistry.clear();
 }
 
 /**
@@ -315,6 +321,20 @@ function _type(el) {
   return tag.slice(0, 80);
 }
 
+// Kept browser-local: this is execution metadata, not part of PageState.
+function _targetIdentity(el, role, label, type) {
+  return {
+    tag: (el.tagName || "").toLowerCase(),
+    role: role === undefined ? _role(el) : role,
+    label: label === undefined ? _label(el) : label,
+    type: type === undefined ? _type(el) : type,
+  };
+}
+
+function _resolveTargetIdentity(id) {
+  return _identityRegistry.get(id) || null;
+}
+
 // ---------------------------------------------------------------------------
 // Element selector — which elements to extract from a given root
 // Day 2: added ul, ol, li, option, article, section, summary, dialog
@@ -474,19 +494,20 @@ function capturePageState() {
   allElements.forEach((el) => {
     const visible = _isVisible(el);
     const enabled = _isEnabled(el);
-    const id = _register(el);
+    const role = _role(el);
+    const type = _type(el);
+    const label = _label(el);
+    const id = _register(el, _targetIdentity(el, role, label, type));
 
     const entry = {
       element_id: id,
-      role: _role(el),
+      role,
       visible,
       enabled,
     };
 
-    const type = _type(el);
     if (type) entry.type = type;
 
-    const label = _label(el);
     if (label !== "") entry.label = label;
 
     const text = _text(el);
@@ -589,3 +610,6 @@ window.__pageStateCapture  = capturePageState;
 window.__pageStateValidate = validatePageState;
 window.__elementRegistry   = _registry;
 window.__resolveRegistryEntry = _resolveRegistryEntry;
+window.__resolveTargetIdentity = _resolveTargetIdentity;
+window.__targetIdentityForElement = _targetIdentity;
+})();

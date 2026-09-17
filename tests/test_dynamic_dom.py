@@ -3,6 +3,7 @@ import unittest
 
 from agent import Agent
 from agent.dynamic_dom import DynamicDOMOrchestrator
+from src.privacy_engine import PrivacyEngine
 
 
 class StaticAdapter:
@@ -45,6 +46,24 @@ def fresh_state(state_id="SPS_fresh_002", element_id="EL_010"):
             "categories": [],
             "verification_passed": True,
         },
+    }
+
+
+def fresh_raw_page_state(element_id="EL_010"):
+    return {
+        "schema_version": "1.0",
+        "page_state_id": "PS_fresh_002",
+        "captured_at": "2026-09-17T12:00:00Z",
+        "url": "https://example.test/workflow",
+        "title": "Workflow",
+        "visible_text": "Continue",
+        "elements": [{
+            "element_id": element_id,
+            "role": "button",
+            "label": "Continue",
+            "visible": True,
+            "enabled": True,
+        }],
     }
 
 
@@ -187,6 +206,32 @@ class DynamicDOMTests(unittest.TestCase):
         self.assertIsNone(output.action_plan)
         self.assertEqual(output.action_result["status"], "BLOCKED_BY_POLICY")
         self.assertEqual(output.action_result["error"]["code"], "POLICY_BLOCKED")
+
+    def test_stale_recovery_uses_privacy_sanitized_fresh_state(self):
+        fresh_sanitized_state = PrivacyEngine().sanitize(fresh_raw_page_state())
+        agent = Agent(StaticAdapter(action_plan(
+            fresh_sanitized_state["sanitized_state_id"], "EL_010"
+        )))
+
+        output = DynamicDOMOrchestrator().replan_after_refresh(
+            agent=agent,
+            user_task=user_task(),
+            action_result=stale_result(),
+            original_action={
+                "action_id": "ACT_dynamic_001",
+                "action_type": "CLICK",
+                "target_element_id": "EL_001",
+                "reason": "Continue.",
+                "risk_level": "LOW",
+            },
+            fresh_sanitized_page_state=fresh_sanitized_state,
+            stale_recoveries=0,
+        )
+
+        self.assertEqual(fresh_sanitized_state["source_page_state_id"], "PS_fresh_002")
+        self.assertIsNotNone(output.action_plan)
+        self.assertEqual(output.action_plan["source_sanitized_state_id"], fresh_sanitized_state["sanitized_state_id"])
+        self.assertEqual(output.action_plan["actions"][0]["target_element_id"], "EL_010")
 
 
 if __name__ == "__main__":

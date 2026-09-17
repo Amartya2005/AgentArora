@@ -11,7 +11,9 @@
 "use strict";
 
 (function () {
-  function run() {
+  if (window.__captureFreshPageState) return;
+
+  function capturePageState() {
     const pageState = window.__pageStateCapture();
     const schemaErrors = window.__pageStateValidate(pageState);
 
@@ -22,11 +24,16 @@
         console.error("[PageState] schema validation failed:", error);
       });
     }
+    return pageState;
   }
 
+  // This remains browser-local. A downstream privacy integration may request a
+  // capture, but this script never sends raw PageState to the reasoning agent.
+  window.__captureFreshPageState = capturePageState;
+
   if (document.readyState === "complete" || document.readyState === "interactive") {
-    run();
+    capturePageState();
   } else {
-    document.addEventListener("DOMContentLoaded", run, { once: true });
+    document.addEventListener("DOMContentLoaded", capturePageState, { once: true });
   }
 })();
