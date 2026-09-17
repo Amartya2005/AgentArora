@@ -13,6 +13,24 @@ async function postResult(requestId, actionResults) {
   });
 }
 
+async function postPageState(pageState) {
+  await fetch(`${BRIDGE_URL}/page-state`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ page_state: pageState }),
+  });
+}
+
+chrome.runtime.onMessage.addListener((message, _sender, _sendResponse) => {
+  if (!message || message.type !== "PAGE_STATE" || !message.page_state) return false;
+
+  postPageState(message.page_state).catch((error) => {
+    // Never log raw PageState or element contents.
+    console.warn("[Bridge] PageState publish failed", error && error.message ? error.message : error);
+  });
+  return false;
+});
+
 function reloadTabAndWait(tabId) {
   return new Promise((resolve, reject) => {
     let settled = false;
