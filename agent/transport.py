@@ -1,7 +1,8 @@
 """Local Member 3 -> MV3 browser transport.
 
-The bridge carries only validated ActionPlans and ActionResults. PageState and
-SanitizedPageState remain outside this transport boundary.
+The bridge carries validated ActionPlans and ActionResults, plus raw PageState
+for the local privacy boundary. Raw PageState must never be passed directly
+to the reasoning agent or logged by the bridge.
 """
 
 from __future__ import annotations
@@ -56,6 +57,21 @@ class _BridgeHandler(BaseHTTPRequestHandler):
         self._write(200, body)
 
     def do_POST(self) -> None:
+        if self.path == "/page-state":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length))
+                page_state = payload["page_state"]
+                if not isinstance(page_state, dict):
+                    self._write(400)
+                    return
+                self.server.bridge.publish_page_state(page_state)
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                self._write(400)
+                return
+            self._write(204)
+            return
+
         if self.path != "/action-result":
             self._write(404)
             return
@@ -77,6 +93,7 @@ class BrowserBridgeServer:
     def __init__(self, host: str = "127.0.0.1", port: int = 8765):
         self._http = ThreadingHTTPServer((host, port), _BridgeHandler)
         self._http.pending = queue.Queue()
+        self._http.page_states = queue.Queue(maxsize=1)
         self._http.bridge = self
         self._http.results: dict[str, tuple[threading.Event, list[dict[str, Any]]]] = {}
         self._http.results_lock = threading.Lock()
@@ -111,6 +128,29 @@ class BrowserBridgeServer:
         with self._http.results_lock:
             _, results = self._http.results.pop(request_id)
         return results
+
+    def publish_page_state(self, page_state: Mapping[str, Any]) -> None:
+        """Receive raw browser PageState for the local privacy boundary.
+
+        Raw PageState must never be logged or passed directly to the reasoning
+        agent. Only the local PrivacyEngine may consume it.
+        """
+        page_state_copy = dict(page_state)
+        try:
+            self._http.page_states.put_nowait(page_state_copy)
+        except queue.Full:
+            try:
+                self._http.page_states.get_nowait()
+            except queue.Empty:
+                pass
+            self._http.page_states.put_nowait(page_state_copy)
+
+    def wait_for_page_state(self, timeout: float = 30.0) -> dict[str, Any]:
+        """Wait for the newest raw browser PageState."""
+        try:
+            return self._http.page_states.get(timeout=timeout)
+        except queue.Empty as exc:
+            raise TimeoutError("Timed out waiting for browser PageState.") from exc
 
     def complete(self, request_id: str, results: list[dict[str, Any]]) -> None:
         with self._http.results_lock:
