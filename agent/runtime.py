@@ -93,6 +93,19 @@ class BrowserAgentRuntime:
                 stale_recoveries=stale_recoveries,
             )
 
+    def _sanitize(self, raw_page_state: Mapping[str, Any], stale_recoveries: int) -> tuple[dict[str, Any] | None, RuntimeResult | None]:
+        try:
+            return self.privacy_engine.sanitize(dict(raw_page_state)), None
+        except Exception as exc:
+            return None, RuntimeResult(
+                status="FAIL",
+                failure={
+                    "code": "PRIVACY_BOUNDARY_FAILURE",
+                    "message": str(exc),
+                },
+                stale_recoveries=stale_recoveries,
+            )
+
     def _run_from_page_state(
         self,
         task: Mapping[str, Any],
@@ -101,17 +114,10 @@ class BrowserAgentRuntime:
         stale_recoveries: int,
         action_timeout: float,
     ) -> RuntimeResult:
-        try:
-            sanitized_page_state = self.privacy_engine.sanitize(dict(raw_page_state))
-        except Exception as exc:
-            return RuntimeResult(
-                status="FAIL",
-                failure={
-                    "code": "PRIVACY_BOUNDARY_FAILURE",
-                    "message": str(exc),
-                },
-                stale_recoveries=stale_recoveries,
-            )
+        sanitized_page_state, privacy_failure = self._sanitize(raw_page_state, stale_recoveries)
+        if privacy_failure:
+            return privacy_failure
+        assert sanitized_page_state is not None
 
         output = self.agent.create_plan(task, sanitized_page_state)
         if output.action_result is not None:
@@ -131,44 +137,58 @@ class BrowserAgentRuntime:
                 stale_recoveries=stale_recoveries,
             )
 
-        try:
-            action_results = self.transport.execute_action_plan(output.action_plan, action_timeout)
-        except Exception as exc:
-            return RuntimeResult(
-                status="FAIL",
-                failure={
-                    "code": "BROWSER_TRANSPORT_FAILURE",
-                    "message": str(exc),
-                },
-                stale_recoveries=stale_recoveries,
-            )
+        current_plan = output.action_plan
+        current_results: list[dict[str, Any]] = []
+        current_actions: list[Mapping[str, Any]] = current_plan.get("actions", [])
 
-        if not action_results:
-            return RuntimeResult(
-                status="FAIL",
-                failure={
-                    "code": "EMPTY_ACTION_RESULT",
-                    "message": "Browser returned no ActionResult records.",
-                },
-                stale_recoveries=stale_recoveries,
-            )
+        while True:
+            try:
+                current_results = self.transport.execute_action_plan(current_plan, action_timeout)
+            except Exception as exc:
+                return RuntimeResult(
+                    status="FAIL",
+                    failure={
+                        "code": "BROWSER_TRANSPORT_FAILURE",
+                        "message": str(exc),
+                    },
+                    stale_recoveries=stale_recoveries,
+                )
 
-        actions = output.action_plan.get("actions", [])
-        for index, action_result in enumerate(action_results):
-            if action_result.get("status") == "SUCCESS":
-                continue
+            if not current_results:
+                return RuntimeResult(
+                    status="FAIL",
+                    failure={
+                        "code": "EMPTY_ACTION_RESULT",
+                        "message": "Browser returned no ActionResult records.",
+                    },
+                    stale_recoveries=stale_recoveries,
+                )
 
-            original_action = actions[index] if index < len(actions) else actions[0]
+            stale_result = None
+            stale_action: Mapping[str, Any] | None = None
+            for index, action_result in enumerate(current_results):
+                if action_result.get("status") != "SUCCESS":
+                    stale_result = action_result
+                    stale_action = current_actions[index] if index < len(current_actions) else current_actions[0]
+                    break
+
+            if stale_result is None:
+                return RuntimeResult(
+                    status="SUCCESS",
+                    action_results=tuple(dict(item) for item in current_results),
+                    stale_recoveries=stale_recoveries,
+                )
+
             decision = self.dynamic_dom.handle_action_result(
-                action_result,
-                original_action,
+                stale_result,
+                stale_action,
                 stale_recoveries,
             )
             if not decision.allowed:
-                failure_result = decision.result or dict(action_result)
+                failure_result = decision.result or dict(stale_result)
                 return RuntimeResult(
                     status="FAIL",
-                    action_results=tuple(dict(item) for item in action_results),
+                    action_results=tuple(dict(item) for item in current_results),
                     failure=failure_result.get("error"),
                     stale_recoveries=stale_recoveries,
                 )
@@ -176,19 +196,26 @@ class BrowserAgentRuntime:
             stale_recoveries += 1
             try:
                 fresh_raw_page_state = self.transport.bridge.wait_for_page_state(DEFAULT_PAGE_STATE_TIMEOUT)
-                fresh_sanitized_page_state = self.privacy_engine.sanitize(dict(fresh_raw_page_state))
+                fresh_sanitized_page_state, privacy_failure = self._sanitize(
+                    fresh_raw_page_state,
+                    stale_recoveries,
+                )
+                if privacy_failure:
+                    return privacy_failure
+                assert fresh_sanitized_page_state is not None
+
                 replanned: AgentOutput = self.dynamic_dom.replan_after_refresh(
                     self.agent,
                     task,
-                    action_result,
-                    original_action,
+                    stale_result,
+                    stale_action,
                     fresh_sanitized_page_state,
                     stale_recoveries,
                 )
             except Exception as exc:
                 return RuntimeResult(
                     status="FAIL",
-                    action_results=tuple(dict(item) for item in action_results),
+                    action_results=tuple(dict(item) for item in current_results),
                     failure={
                         "code": "STALE_RECOVERY_FAILURE",
                         "message": str(exc),
@@ -199,14 +226,14 @@ class BrowserAgentRuntime:
             if replanned.action_result is not None:
                 return RuntimeResult(
                     status="FAIL",
-                    action_results=tuple(dict(item) for item in action_results),
+                    action_results=tuple(dict(item) for item in current_results),
                     failure=replanned.action_result.get("error"),
                     stale_recoveries=stale_recoveries,
                 )
             if replanned.action_plan is None:
                 return RuntimeResult(
                     status="FAIL",
-                    action_results=tuple(dict(item) for item in action_results),
+                    action_results=tuple(dict(item) for item in current_results),
                     failure={
                         "code": "REPLAN_FAILED",
                         "message": "Fresh-state reasoning produced no action plan.",
@@ -214,41 +241,8 @@ class BrowserAgentRuntime:
                     stale_recoveries=stale_recoveries,
                 )
 
-            try:
-                retry_results = self.transport.execute_action_plan(replanned.action_plan, action_timeout)
-            except Exception as exc:
-                return RuntimeResult(
-                    status="FAIL",
-                    action_results=tuple(dict(item) for item in action_results),
-                    failure={
-                        "code": "BROWSER_TRANSPORT_FAILURE",
-                        "message": str(exc),
-                    },
-                    stale_recoveries=stale_recoveries,
-                )
-
-            if any(result.get("status") != "SUCCESS" for result in retry_results):
-                return RuntimeResult(
-                    status="FAIL",
-                    action_results=tuple(dict(item) for item in retry_results),
-                    failure={
-                        "code": "ACTION_RETRY_FAILED",
-                        "message": "Fresh-state retry did not complete successfully.",
-                    },
-                    stale_recoveries=stale_recoveries,
-                )
-
-            return RuntimeResult(
-                status="SUCCESS",
-                action_results=tuple(dict(item) for item in retry_results),
-                stale_recoveries=stale_recoveries,
-            )
-
-        return RuntimeResult(
-            status="SUCCESS",
-            action_results=tuple(dict(item) for item in action_results),
-            stale_recoveries=stale_recoveries,
-        )
+            current_plan = replanned.action_plan
+            current_actions = current_plan.get("actions", [])
 
 
 def main() -> int:
