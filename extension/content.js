@@ -5,13 +5,26 @@
  * SECURITY:
  * - Raw PageState is never written to the console.
  * - Element registry contents are never written to the console.
- * - PII sanitization remains the responsibility of the privacy engine.
+ * - Raw PageState is sent only to the localhost bridge so Python can apply
+ *   the PrivacyEngine before any reasoning step.
  */
 
 "use strict";
 
 (function () {
   if (window.__captureFreshPageState) return;
+
+  function publishPageState(pageState) {
+    try {
+      chrome.runtime.sendMessage({
+        type: "PAGE_STATE",
+        page_state: pageState,
+      }).catch(() => {});
+    } catch (_error) {
+      // The perception layer must remain usable even if the bridge is offline.
+      // Do not expose raw PageState in diagnostics.
+    }
+  }
 
   function capturePageState() {
     const pageState = window.__pageStateCapture();
@@ -23,12 +36,13 @@
       schemaErrors.forEach((error) => {
         console.error("[PageState] schema validation failed:", error);
       });
+      return pageState;
     }
+
+    publishPageState(pageState);
     return pageState;
   }
 
-  // This remains browser-local. A downstream privacy integration may request a
-  // capture, but this script never sends raw PageState to the reasoning agent.
   window.__captureFreshPageState = capturePageState;
 
   if (document.readyState === "complete" || document.readyState === "interactive") {
