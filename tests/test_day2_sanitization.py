@@ -192,6 +192,17 @@ def test_embedded_sensitive_spans_preserve_safe_context():
         assert original not in sanitized
 
 
+def test_three_word_name_is_redacted_as_one_span():
+    # Bug 2: changed name matching to cover three-word names; removed the exposed surname path.
+    tokenizer = PrivacyTokenizer()
+    sanitized, modified = tokenizer.sanitize_node("Customer: Rahul Kumar Sharma")
+
+    assert modified is True
+    assert sanitized == "Customer: [PERSON_01]"
+    assert "Rahul Kumar Sharma" not in sanitized
+    assert "Sharma" not in sanitized
+
+
 def test_message_content_is_redacted_without_losing_safe_prefix():
     tokenizer = PrivacyTokenizer()
     sanitized, modified = tokenizer.sanitize_node(
@@ -224,6 +235,63 @@ def test_contextual_password_replaces_only_the_secret():
     assert sanitized == "Password: [PASSWORD_01]"
     assert "DemoPass123!" not in sanitized
     assert tokenizer.local_mapping == {"[PASSWORD_01]": "DemoPass123!"}
+
+
+def test_otp_is_redacted_from_labeled_fields_and_text():
+    # Bug 6: changed OTP handling to redact numeric codes; removed the unmasked OTP path.
+    tokenizer = PrivacyTokenizer()
+
+    field, modified = tokenizer.sanitize_node("123456", "password")
+    text_tokenizer = PrivacyTokenizer()
+    text, text_modified = text_tokenizer.sanitize_node("Your OTP: 123456 is valid for 5 minutes")
+
+    assert modified is True
+    assert text_modified is True
+    assert field == "[PASSWORD_01]"
+    assert text == "Your OTP: [PASSWORD_01] is valid for 5 minutes"
+    assert "123456" not in field
+    assert "123456" not in text
+
+
+def test_ssn_is_redacted_from_labeled_fields_and_text():
+    # Bug 5: changed SSN handling to use dedicated redaction; removed the exposed SSN path.
+    tokenizer = PrivacyTokenizer()
+
+    field, modified = tokenizer.sanitize_node("123-45-6789", "ssn")
+    text, text_modified = tokenizer.sanitize_node("SSN: 123-45-6789", None)
+
+    assert modified is True
+    assert text_modified is True
+    assert field == "[SSN_01]"
+    assert text == "SSN: [SSN_01]"
+    assert "123-45-6789" not in field
+    assert "123-45-6789" not in text
+
+
+def test_pan_is_redacted_from_labeled_fields_and_text():
+    # Bug 4: changed PAN handling to use dedicated redaction; removed the exposed card-number path.
+    tokenizer = PrivacyTokenizer()
+
+    field, modified = tokenizer.sanitize_node("4111 1111 1111 1111", "pan")
+    text_tokenizer = PrivacyTokenizer()
+    text, text_modified = text_tokenizer.sanitize_node("Card number: 4111-1111-1111-1111", None)
+
+    assert modified is True
+    assert text_modified is True
+    assert field == "[PAN_01]"
+    assert text == "Card number: [PAN_01]"
+    assert "4111" not in field
+    assert "4111" not in text
+
+
+def test_partially_masked_pan_does_not_expose_last_four_digits():
+    # Bug 3: changed partial PAN handling to redact the full masked value; removed the exposed last-four path.
+    tokenizer = PrivacyTokenizer()
+    sanitized, modified = tokenizer.sanitize_node("**** **** **** 1111", "pan")
+
+    assert modified is True
+    assert sanitized == "[PAN_01]"
+    assert "1111" not in sanitized
 
 
 def test_full_state_redaction_has_no_original_message_or_name_values():

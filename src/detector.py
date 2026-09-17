@@ -11,11 +11,14 @@ class PrivacyDetector:
     EMAIL_REGEX = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b')
     INDIAN_PHONE_REGEX = re.compile(r'^(?:\+?91[\-\s]?)?[6-9]\d{4}[\-\s]?\d{5}$')
     CURRENCY_REGEX = re.compile(r'(?:₹|Rs\.?|INR)\s*[\d,]+(?:\.\d{2})?', re.IGNORECASE)
+    SSN_REGEX = re.compile(r"\d{3}[- ]?\d{2}[- ]?\d{4}")
+    PAN_REGEX = re.compile(r"(?:\d[ -]?){12,18}\d")
+    MASKED_PAN_REGEX = re.compile(r"(?:[*xX#]{4}[ -]?){3}\d{4}")
 
     CONTEXT_KEYWORDS = {
         "password": [
             "password:", "enter password:", "current password:",
-            "new password:", "confirm password:", "password ="
+            "new password:", "confirm password:", "password =", "otp:", "otp ="
         ],
         "account": [
             "account no:", "a/c no:", "bank account:", "account number:"
@@ -26,7 +29,28 @@ class PrivacyDetector:
         "message": [
             "private conversation", "confidential", "don't tell anyone",
             "verification details", "reply to me privately", "send the bank details"
-        ]
+        ],
+        "financial": [
+            "bank account", "banking details", "credit card", "debit card", "transaction history",
+            "transaction details", "payment details", "routing number", "wire transfer", "salary",
+            "tax return", "investment portfolio"
+        ],
+        "medical": [
+            "medical record", "diagnosis", "prescription", "medication", "symptoms",
+            "patient", "health insurance", "blood type", "lab result"
+        ],
+        "authentication": [
+            "sign in credentials", "log in credentials", "login credentials", "verification code", "security answer",
+            "api key", "auth token", "passcode", "recovery code", "two-factor"
+        ],
+        "private_communication": [
+            "private conversation", "direct message", "personal message", "reply privately",
+            "do not share this", "don't tell anyone"
+        ],
+        "confidential": [
+            "confidential", "internal use only", "proprietary", "trade secret",
+            "restricted information", "do not distribute", "under nda"
+        ],
     }
 
     NEGATIVE_CONTEXTS = {
@@ -56,14 +80,25 @@ class PrivacyDetector:
 
         return False
 
+    def detect_ssn(self, text: str) -> bool:
+        return bool(self.SSN_REGEX.fullmatch(text.strip()))
+
+    def detect_pan(self, text: str) -> bool:
+        clean_text = text.strip()
+        digits_only = re.sub(r"[ -]", "", clean_text)
+        return bool(
+            (self.PAN_REGEX.fullmatch(clean_text) and 13 <= len(digits_only) <= 19)
+            or self.MASKED_PAN_REGEX.fullmatch(clean_text)
+        )
+
     def detect_name(self, text: str) -> bool:
         clean_text = text.strip()
         if clean_text.lower() in self.NEGATIVE_CONTEXTS["name"]:
             return False
 
         words = clean_text.split()
-        # Requires multi-word proper capitalization standard for human names in context
-        if len(words) == 2 and all(w.istitle() for w in words):
+        # Require a multi-word proper-capitalization pattern for human names in context.
+        if 2 <= len(words) <= 4 and all(w.istitle() for w in words):
             return True
         return False
 
@@ -85,7 +120,7 @@ class PrivacyDetector:
         for prefix in self.CONTEXT_KEYWORDS["password"]:
             if clean_text.startswith(prefix):
                 return True
-        return False
+        return bool(re.fullmatch(r"\d{4,8}", clean_text))
 
     def detect_payment(self, text: str) -> bool:
         clean_text = text.strip()
@@ -122,6 +157,26 @@ class PrivacyDetector:
         clean_lower = text.lower()
         return any(keyword in clean_lower for keyword in self.CONTEXT_KEYWORDS["message"])
 
+    def detect_sensitive_context(self, text: str, category: str) -> bool:
+        """Detect a small, explicit set of high-risk context phrases."""
+        clean_lower = text.lower()
+        return any(keyword in clean_lower for keyword in self.CONTEXT_KEYWORDS.get(category, []))
+
+    def detect_financial(self, text: str) -> bool:
+        return self.detect_sensitive_context(text, "financial")
+
+    def detect_medical(self, text: str) -> bool:
+        return self.detect_sensitive_context(text, "medical")
+
+    def detect_authentication(self, text: str) -> bool:
+        return self.detect_sensitive_context(text, "authentication")
+
+    def detect_private_communication(self, text: str) -> bool:
+        return self.detect_sensitive_context(text, "private_communication")
+
+    def detect_confidential(self, text: str) -> bool:
+        return self.detect_sensitive_context(text, "confidential")
+
 
 def evaluate_item(category: str, text: str) -> bool:
     detector = PrivacyDetector()
@@ -131,9 +186,16 @@ def evaluate_item(category: str, text: str) -> bool:
         "name": detector.detect_name,
         "address": detector.detect_address,
         "password": detector.detect_password,
+        "ssn": detector.detect_ssn,
+        "pan": detector.detect_pan,
         "payment": detector.detect_payment,
         "account": detector.detect_account,
         "message": detector.detect_message,
+        "financial": detector.detect_financial,
+        "medical": detector.detect_medical,
+        "authentication": detector.detect_authentication,
+        "private_communication": detector.detect_private_communication,
+        "confidential": detector.detect_confidential,
     }
 
     handler = method_map.get(category.lower())
