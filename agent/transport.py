@@ -65,6 +65,9 @@ class _BridgeHandler(BaseHTTPRequestHandler):
                 if not isinstance(page_state, dict):
                     self._write(400)
                     return
+                if list(self.server.bridge.page_state_validator.iter_errors(page_state)):
+                    self._write(400)
+                    return
                 self.server.bridge.publish_page_state(page_state)
             except (KeyError, TypeError, ValueError, json.JSONDecodeError):
                 self._write(400)
@@ -98,6 +101,21 @@ class BrowserBridgeServer:
         self._http.results: dict[str, tuple[threading.Event, list[dict[str, Any]]]] = {}
         self._http.results_lock = threading.Lock()
         self._thread: threading.Thread | None = None
+        self.page_state_validator = self._load_page_state_validator()
+
+    @staticmethod
+    def _load_page_state_validator() -> Draft202012Validator:
+        contracts_dir = Path(__file__).resolve().parent.parent / "contracts"
+        schemas = {
+            schema.name: json.loads(schema.read_text(encoding="utf-8"))
+            for schema in contracts_dir.glob("*.schema.json")
+        }
+        schema = schemas["page-state.schema.json"]
+        return Draft202012Validator(
+            schema,
+            resolver=RefResolver.from_schema(schema, store=schemas),
+            format_checker=FormatChecker(),
+        )
 
     @property
     def address(self) -> tuple[str, int]:
@@ -130,11 +148,7 @@ class BrowserBridgeServer:
         return results
 
     def publish_page_state(self, page_state: Mapping[str, Any]) -> None:
-        """Receive raw browser PageState for the local privacy boundary.
-
-        Raw PageState must never be logged or passed directly to the reasoning
-        agent. Only the local PrivacyEngine may consume it.
-        """
+        """Receive raw browser PageState for the local privacy boundary."""
         page_state_copy = dict(page_state)
         try:
             self._http.page_states.put_nowait(page_state_copy)
