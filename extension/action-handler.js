@@ -8,6 +8,8 @@
 "use strict";
 
 (function () {
+  if (window.__executeActionPlan) return;
+
   const ACTION_TYPES = new Set(["CLICK", "TYPE", "SCROLL", "SELECT", "PRESS_KEY", "WAIT"]);
   const RISK_LEVELS = new Set(["LOW", "MEDIUM", "HIGH"]);
   const INPUT_SOURCES = new Set(["USER_TASK", "SAFE_LITERAL", "PLACEHOLDER"]);
@@ -22,6 +24,7 @@
   const PLAN_ID = /^AP_[A-Za-z0-9_-]{6,64}$/;
   const STATE_ID = /^SPS_[A-Za-z0-9_-]{6,64}$/;
   const ELEMENT_ID = /^EL_[0-9]{3,6}$/;
+  const UNSAFE_CONTENT = /(?:javascript\s*:|<\s*\/?\s*script\b|(?:document|window)\s*\.|\beval\s*\()/i;
 
   function object(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -29,6 +32,12 @@
 
   function string(value, min, max) {
     return typeof value === "string" && value.length >= min && value.length <= max;
+  }
+
+  function containsUnsafeContent(value) {
+    if (typeof value === "string") return UNSAFE_CONTENT.test(value);
+    if (object(value)) return Object.values(value).some(containsUnsafeContent);
+    return false;
   }
 
   function errorResult(planId, actionId, status, code, message, retryable, fresh) {
@@ -73,6 +82,7 @@
     if (!object(action) || !string(action.action_id, 7, 71) || !ACTION_ID.test(action.action_id)) return "Action identity is invalid.";
     if (!ACTION_TYPES.has(action.action_type)) return "Action type is not supported.";
     if (!string(action.reason, 1, 500) || !RISK_LEVELS.has(action.risk_level)) return "Action metadata is invalid.";
+    if (containsUnsafeContent(action)) return "Action contains unsupported executable content.";
     if (action.requires_user_confirmation !== undefined && typeof action.requires_user_confirmation !== "boolean") return "Action confirmation flag is invalid.";
 
     const common = new Set(["action_id", "action_type", "reason", "risk_level", "requires_user_confirmation"]);
@@ -139,6 +149,14 @@
     return el.getAttribute("aria-disabled") !== "true" && !("disabled" in el && el.disabled);
   }
 
+  function sameTargetIdentity(expected, current) {
+    return expected && current &&
+      expected.tag === current.tag &&
+      expected.role === current.role &&
+      expected.label === current.label &&
+      expected.type === current.type;
+  }
+
   function resolveTarget(action) {
     const registry = window.__elementRegistry;
     if (!registry || !registry.has(action.target_element_id)) return { error: "unknown" };
@@ -147,6 +165,15 @@
     if (!el || !el.isConnected) return { error: "stale" };
     if (!visible(el)) return { error: "invisible" };
     if (!enabled(el)) return { error: "disabled" };
+    try {
+      const expected = typeof window.__resolveTargetIdentity === "function" &&
+        window.__resolveTargetIdentity(action.target_element_id);
+      const current = typeof window.__targetIdentityForElement === "function" &&
+        window.__targetIdentityForElement(el);
+      if (!sameTargetIdentity(expected, current)) return { error: "identity" };
+    } catch (_error) {
+      return { error: "stale" };
+    }
     return { el };
   }
 
@@ -177,8 +204,9 @@
       const resolved = resolveTarget(action);
       if (resolved.error === "unknown") return errorResult(plan.action_plan_id, action.action_id, "INVALID_ACTION", "INVALID_ACTION", "Target element ID is not registered.", false, false);
       if (resolved.error === "stale") return errorResult(plan.action_plan_id, action.action_id, "STALE_ELEMENT", "STALE_ELEMENT", "Target element is no longer attached to the document.", true, true);
-      if (resolved.error === "disabled") return errorResult(plan.action_plan_id, action.action_id, "BLOCKED_BY_POLICY", "POLICY_BLOCKED", "Target element is disabled.", false, false);
-      if (resolved.error === "invisible") return errorResult(plan.action_plan_id, action.action_id, "BLOCKED_BY_POLICY", "POLICY_BLOCKED", "Target element is not visible.", true, true);
+      if (resolved.error === "identity") return errorResult(plan.action_plan_id, action.action_id, "STALE_ELEMENT", "STALE_ELEMENT", "Target element no longer matches its captured identity.", true, true);
+      if (resolved.error === "disabled") return errorResult(plan.action_plan_id, action.action_id, "BLOCKED_BY_POLICY", "POLICY_BLOCKED", "Target element is disabled.", false, true);
+      if (resolved.error === "invisible") return errorResult(plan.action_plan_id, action.action_id, "STALE_ELEMENT", "STALE_ELEMENT", "Target element is no longer visible.", true, true);
       const el = resolved.el;
       if (action.action_type === "CLICK") {
         if (!clickTarget(el)) return errorResult(plan.action_plan_id, action.action_id, "INVALID_ACTION", "INVALID_ACTION", "Target element is not an approved click target.", false, false);
@@ -232,6 +260,11 @@
       } catch (error) {
         results.push(errorResult(plan.action_plan_id, action.action_id, "EXECUTION_FAILED", "EXECUTION_FAILED", "Browser action could not be completed.", true, false));
       }
+    }
+    // One observation after a plan, never a full scan before each action.
+    if (results.some((result) => result.needs_fresh_page_state) &&
+        typeof window.__captureFreshPageState === "function") {
+      try { window.__captureFreshPageState(); } catch (_error) { /* Preserve the original ActionResult. */ }
     }
     return results;
   }
