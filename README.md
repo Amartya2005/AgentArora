@@ -486,6 +486,8 @@ See [`extension/README.md`](extension/README.md) for the browser-specific setup 
 
 ## 📊 Benchmark & Test Evidence
 
+Validation is intentionally split across browser perception, privacy processing, action policy, and orchestration so failures can be isolated instead of hidden inside one end-to-end test.
+
 The repository contains multiple levels of validation.
 
 ### Browser perception benchmark
@@ -616,8 +618,6 @@ AgentArora/
 ## 🚀 Getting Started
 
 ### Python components
-
-The project is organized so the privacy, agent, and browser layers can be tested independently before they are connected end-to-end.
 
 The current Python dependency is:
 
