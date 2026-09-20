@@ -1,5 +1,11 @@
 # AgentArora
 
+> **Privacy-first browser automation for agentic workflows.**
+
+[![Smart India Hackathon 2026](https://img.shields.io/badge/Smart%20India%20Hackathon-2026-blue)](https://www.sih.gov.in/)
+[![Status](https://img.shields.io/badge/status-prototype-orange)](https://github.com/Amartya2005/AgentArora)
+[![Privacy](https://img.shields.io/badge/privacy-local%20sanitization-green)](https://github.com/Amartya2005/AgentArora)
+
 ## Privacy-Preserving Browser Agent
 
 **Smart India Hackathon 2026**  
@@ -59,7 +65,7 @@ Only the sanitized representation crosses into the Agent-facing context.
 
 ---
 
-## Current Implementation Status
+## ✨ Current Implementation Status
 
 The current `main` branch contains the major prototype pieces from the five-day implementation:
 
@@ -84,11 +90,11 @@ The current `main` branch contains the major prototype pieces from the five-day 
 | URL path sanitization hardening | ✅ |
 | Provider-specific LLM integration | ⏳ Adapter boundary exists; no provider/API key is hard-coded |
 
-The repository is still a prototype, not a production-grade browser automation platform. That distinction is useful because physics, unlike hackathon slides, remains unimpressed.
+The repository is a prototype, not a production-grade browser automation platform. Production deployment would require additional hardening, evaluation, observability, and multi-user security.
 
 ---
 
-## Architecture
+## 🧠 Architecture
 
 AgentArora is split into three logical members:
 
@@ -130,7 +136,7 @@ Responsibilities:
 
 ---
 
-## Privacy Boundary
+## 🔐 Privacy Boundary
 
 The most important boundary in the system is:
 
@@ -170,7 +176,7 @@ The privacy layer is not a prompt. It is an explicit software boundary with sche
 
 ---
 
-## Privacy Protection
+## 🛡️ Privacy Protection
 
 The detector and tokenizer currently cover structured sensitive data and explicit sensitive-context categories.
 
@@ -240,7 +246,7 @@ https://example.test/profile/[PERSON_01]
 
 ---
 
-## Agent Reasoning Boundary
+## 🤖 Agent Reasoning Boundary
 
 AgentArora uses an adapter-based reasoning interface:
 
@@ -274,7 +280,7 @@ This keeps the reasoning interface intentionally narrow.
 
 ---
 
-## Action Model
+## ⚙️ Action Model
 
 The initial action vocabulary is deliberately constrained:
 
@@ -313,7 +319,7 @@ The Agent cannot emit:
 
 ---
 
-## Risk Policy
+## ⚠️ Risk Policy
 
 Action risk is re-evaluated deterministically after plan generation.
 
@@ -329,7 +335,7 @@ This prevents the reasoning adapter from lowering its own safety requirements by
 
 ---
 
-## Dynamic DOM Recovery
+## 🔄 Dynamic DOM Recovery
 
 Modern pages mutate while an automation agent is working. A previously captured element can disappear or be replaced before execution.
 
@@ -364,7 +370,7 @@ The default recovery bound is **2 stale recoveries**.
 
 ---
 
-## Local Browser Transport
+## 🌐 Local Browser Transport
 
 The Python side exposes a small localhost bridge between the agent and the Chrome MV3 extension.
 
@@ -478,7 +484,7 @@ See [`extension/README.md`](extension/README.md) for the browser-specific setup 
 
 ---
 
-## Benchmark & Test Evidence
+## 📊 Benchmark & Test Evidence
 
 The repository contains multiple levels of validation.
 
@@ -531,7 +537,7 @@ The JavaScript side also contains browser action and regression tests.
 
 ---
 
-## Security Model
+## 🔒 Security Model
 
 AgentArora follows several explicit security rules:
 
@@ -558,7 +564,7 @@ AgentArora follows several explicit security rules:
 
 ---
 
-## Repository Layout
+## 📁 Repository Layout
 
 ```text
 AgentArora/
@@ -607,7 +613,7 @@ AgentArora/
 
 ---
 
-## Getting Started
+## 🚀 Getting Started
 
 ### Python components
 
@@ -661,7 +667,7 @@ pytest -q
 
 ---
 
-## Design Constraints
+## 📐 Design Against Evaluation Criteria
 
 The prototype is deliberately optimized around the project's evaluation criteria:
 
@@ -677,7 +683,7 @@ These percentages come from the project's evaluation criteria, while the impleme
 
 ---
 
-## Known Limitations
+## 🧱 Known Limitations
 
 AgentArora is intentionally a prototype. Current limitations include:
 
@@ -692,7 +698,7 @@ AgentArora is intentionally a prototype. Current limitations include:
 
 ---
 
-## Roadmap
+## 🗺️ Roadmap
 
 ### Completed
 
@@ -720,7 +726,7 @@ AgentArora is intentionally a prototype. Current limitations include:
 
 ---
 
-## Documentation
+## 📚 Documentation
 
 - [Architecture](docs/architecture.md)
 - [Common Contracts](docs/contracts.md)
@@ -729,7 +735,7 @@ AgentArora is intentionally a prototype. Current limitations include:
 
 ---
 
-## Project Principle
+## 💡 Project Principle
 
 AgentArora is not trying to make the browser agent see everything.
 
