@@ -617,6 +617,8 @@ AgentArora/
 
 ### Python components
 
+The project is organized so the privacy, agent, and browser layers can be tested independently before they are connected end-to-end.
+
 The current Python dependency is:
 
 ```text
