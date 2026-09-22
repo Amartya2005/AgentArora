@@ -743,4 +743,4 @@ AgentArora is not trying to make the browser agent see everything.
 
 It is trying to make the agent see **enough**.
 
-That distinction is the entire point.
+That distinction is the core design principle.
