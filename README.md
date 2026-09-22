@@ -96,7 +96,7 @@ The repository is a prototype, not a production-grade browser automation platfor
 
 ## 🧠 Architecture
 
-AgentArora is split into three logical members:
+AgentArora is split into three logical members. Each member has a narrow responsibility and communicates through explicit contracts:
 
 ### Member 1 — Browser Perception & Execution
 
