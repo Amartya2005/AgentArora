@@ -6,7 +6,8 @@ Use the standard library test runner for the main suite:
 python -m unittest discover -s tests -v
 ```
 
-Use pytest for the pytest-based regression coverage:
+Use pytest for the pytest-based regression coverage. Keep the main unittest suite and pytest coverage separate so failures are easier to localize:
+
 
 ```bash
 pytest -q
