@@ -24,6 +24,8 @@ class DynamicDOMOrchestrator:
     """
 
     def __init__(self, max_stale_recoveries: int = MAX_STALE_RECOVERIES):
+        if isinstance(max_stale_recoveries, bool) or not isinstance(max_stale_recoveries, int):
+            raise TypeError("max_stale_recoveries must be an integer")
         if max_stale_recoveries < 1:
             raise ValueError("max_stale_recoveries must be at least 1")
         self.max_stale_recoveries = max_stale_recoveries
@@ -35,6 +37,22 @@ class DynamicDOMOrchestrator:
         stale_recoveries: int,
     ) -> StaleRecoveryDecision:
         """Decide whether a STALE_ELEMENT result may trigger a fresh-state replan."""
+        if isinstance(stale_recoveries, bool) or not isinstance(stale_recoveries, int):
+            return StaleRecoveryDecision(
+                allowed=False,
+                needs_fresh_page_state=False,
+                result=self._safe_stop(action_result, "Stale recovery count must be an integer."),
+                reason="Invalid stale-recovery counter.",
+            )
+
+        if stale_recoveries < 0:
+            return StaleRecoveryDecision(
+                allowed=False,
+                needs_fresh_page_state=False,
+                result=self._safe_stop(action_result, "Stale recovery count cannot be negative."),
+                reason="Invalid stale-recovery counter.",
+            )
+
         if action_result.get("status") != "STALE_ELEMENT":
             return StaleRecoveryDecision(
                 allowed=False,
@@ -43,7 +61,7 @@ class DynamicDOMOrchestrator:
                 reason="No stale-element recovery is required.",
             )
 
-        risk_level = original_action.get("risk_level")
+        risk_level = str(original_action.get("risk_level", "LOW")).upper()
         requires_confirmation = bool(original_action.get("requires_user_confirmation", False))
         if risk_level == "HIGH" or requires_confirmation:
             return StaleRecoveryDecision(
