@@ -760,3 +760,7 @@ Reasoning providers remain behind the adapter boundary so provider-specific code
 ### Recovery Safety
 
 Stale-element recovery is bounded and re-plans from a fresh sanitized observation rather than reusing obsolete targets.
+
+### Prototype Scope
+
+The repository prioritizes explicit contracts, privacy boundaries, and deterministic policy checks over production-scale deployment features.
