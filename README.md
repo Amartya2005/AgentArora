@@ -752,3 +752,7 @@ AgentArora keeps sensitive-value handling local to the privacy layer before sani
 ### Development Testing
 
 Run the Python regression suite before changing boundary contracts, action policy, or privacy rules.
+
+### Provider Integration
+
+Reasoning providers remain behind the adapter boundary so provider-specific code does not leak into browser or privacy contracts.
