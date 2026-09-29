@@ -748,3 +748,7 @@ That distinction is the core design principle.
 ### Development Notes
 
 AgentArora keeps sensitive-value handling local to the privacy layer before sanitized state reaches the reasoning interface.
+
+### Development Testing
+
+Run the Python regression suite before changing boundary contracts, action policy, or privacy rules.
