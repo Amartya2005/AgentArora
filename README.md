@@ -756,3 +756,7 @@ Run the Python regression suite before changing boundary contracts, action polic
 ### Provider Integration
 
 Reasoning providers remain behind the adapter boundary so provider-specific code does not leak into browser or privacy contracts.
+
+### Recovery Safety
+
+Stale-element recovery is bounded and re-plans from a fresh sanitized observation rather than reusing obsolete targets.
