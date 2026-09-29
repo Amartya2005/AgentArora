@@ -744,3 +744,7 @@ AgentArora is not trying to make the browser agent see everything.
 It is trying to make the agent see **enough**.
 
 That distinction is the core design principle.
+
+### Development Notes
+
+AgentArora keeps sensitive-value handling local to the privacy layer before sanitized state reaches the reasoning interface.
